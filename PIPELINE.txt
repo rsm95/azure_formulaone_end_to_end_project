@@ -1,0 +1,600 @@
+{
+    "name": "pl_api_ingest1",
+    "properties": {
+        "activities": [
+            {
+                "name": "act_copy_from_api_to_adls",
+                "type": "Copy",
+                "dependsOn": [
+                    {
+                        "activity": "act_lookup_insert_formulaone_metadata",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.00:10:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "source": {
+                        "type": "JsonSource",
+                        "storeSettings": {
+                            "type": "HttpReadSettings",
+                            "requestMethod": "GET"
+                        },
+                        "formatSettings": {
+                            "type": "JsonReadSettings"
+                        }
+                    },
+                    "sink": {
+                        "type": "JsonSink",
+                        "storeSettings": {
+                            "type": "AzureBlobFSWriteSettings"
+                        },
+                        "formatSettings": {
+                            "type": "JsonWriteSettings"
+                        }
+                    },
+                    "enableStaging": false
+                },
+                "inputs": [
+                    {
+                        "referenceName": "ds_api_http1",
+                        "type": "DatasetReference",
+                        "parameters": {
+                            "relative_url": "a.json?limit=100"
+                        }
+                    }
+                ],
+                "outputs": [
+                    {
+                        "referenceName": "ds_adls_formulaone_json1",
+                        "type": "DatasetReference",
+                        "parameters": {
+                            "directory_path": {
+                                "value": "@concat('bronze/seasons/',string(utcNow('yyyyMMdd')))",
+                                "type": "Expression"
+                            }
+                        }
+                    }
+                ]
+            },
+            {
+                "name": "act_lookup_raead_file_content",
+                "type": "Lookup",
+                "dependsOn": [
+                    {
+                        "activity": "act_copy_from_api_to_adls",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "source": {
+                        "type": "JsonSource",
+                        "storeSettings": {
+                            "type": "AzureBlobFSReadSettings",
+                            "recursive": true,
+                            "wildcardFolderPath": {
+                                "value": "@concat('bronze/seasons/',string(utcNow('yyyyMMdd')))",
+                                "type": "Expression"
+                            },
+                            "wildcardFileName": "*.json*",
+                            "enablePartitionDiscovery": false
+                        },
+                        "formatSettings": {
+                            "type": "JsonReadSettings"
+                        }
+                    },
+                    "dataset": {
+                        "referenceName": "ds_adls_formulaone_json1",
+                        "type": "DatasetReference",
+                        "parameters": {
+                            "directory_path": "@concat('')"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "act_foreach_season",
+                "type": "ForEach",
+                "dependsOn": [
+                    {
+                        "activity": "act_lookup_raead_file_content",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "userProperties": [],
+                "typeProperties": {
+                    "items": {
+                        "value": "@activity('act_lookup_raead_file_content').output.firstRow.MRdata.SeasonTable.Seasons",
+                        "type": "Expression"
+                    },
+                    "isSequential": false,
+                    "batchCount": 3,
+                    "activities": [
+                        {
+                            "name": "act_copy_data_race_to_adls",
+                            "type": "Copy",
+                            "dependsOn": [],
+                            "policy": {
+                                "timeout": "0.12:00:00",
+                                "retry": 0,
+                                "retryIntervalInSeconds": 30,
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "typeProperties": {
+                                "source": {
+                                    "type": "JsonSource",
+                                    "storeSettings": {
+                                        "type": "HttpReadSettings",
+                                        "requestMethod": "GET"
+                                    },
+                                    "formatSettings": {
+                                        "type": "JsonReadSettings"
+                                    }
+                                },
+                                "sink": {
+                                    "type": "JsonSink",
+                                    "storeSettings": {
+                                        "type": "AzureBlobFSWriteSettings"
+                                    },
+                                    "formatSettings": {
+                                        "type": "JsonWriteSettings"
+                                    }
+                                },
+                                "enableStaging": false
+                            },
+                            "inputs": [
+                                {
+                                    "referenceName": "ds_api_http1",
+                                    "type": "DatasetReference",
+                                    "parameters": {
+                                        "relative_url": {
+                                            "value": "@concat(item()['season'],'.json?limit=100')",
+                                            "type": "Expression"
+                                        }
+                                    }
+                                }
+                            ],
+                            "outputs": [
+                                {
+                                    "referenceName": "ds_adls_formulaone_json1",
+                                    "type": "DatasetReference",
+                                    "parameters": {
+                                        "directory_path": {
+                                            "value": "@concat('bronze/races/',string(utcNow('yyyyMMdd')))",
+                                            "type": "Expression"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            },
+            {
+                "name": "act_lookup_read_filecontent_race",
+                "type": "Lookup",
+                "dependsOn": [
+                    {
+                        "activity": "act_foreach_season",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "source": {
+                        "type": "JsonSource",
+                        "storeSettings": {
+                            "type": "AzureBlobFSReadSettings",
+                            "recursive": true,
+                            "wildcardFolderPath": {
+                                "value": "@concat('bronze/races/','20240423')",
+                                "type": "Expression"
+                            },
+                            "wildcardFileName": "*.json*",
+                            "enablePartitionDiscovery": false
+                        },
+                        "formatSettings": {
+                            "type": "JsonReadSettings"
+                        }
+                    },
+                    "dataset": {
+                        "referenceName": "ds_adls_formulaone_json1",
+                        "type": "DatasetReference",
+                        "parameters": {
+                            "directory_path": "@concat('')"
+                        }
+                    },
+                    "firstRowOnly": false
+                }
+            },
+            {
+                "name": "act_foreach_race_seeeion_file",
+                "type": "ForEach",
+                "dependsOn": [
+                    {
+                        "activity": "act_lookup_read_filecontent_race",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "userProperties": [],
+                "typeProperties": {
+                    "items": {
+                        "value": "@activity('act_lookup_read_filecontent_race').output.value",
+                        "type": "Expression"
+                    },
+                    "isSequential": false,
+                    "batchCount": 4,
+                    "activities": [
+                        {
+                            "name": "act_execute_bring_race_result",
+                            "type": "ExecutePipeline",
+                            "dependsOn": [],
+                            "policy": {
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "typeProperties": {
+                                "pipeline": {
+                                    "referenceName": "pl_ingest_race_result",
+                                    "type": "PipelineReference"
+                                },
+                                "waitOnCompletion": true,
+                                "parameters": {
+                                    "race_lst": {
+                                        "value": "@item().MRData.RaceTable.Races",
+                                        "type": "Expression"
+                                    }
+                                }
+                            }
+                        },
+                        {
+                            "name": "Set variable1",
+                            "type": "SetVariable",
+                            "dependsOn": [
+                                {
+                                    "activity": "act_execute_bring_race_result",
+                                    "dependencyConditions": [
+                                        "Succeeded"
+                                    ]
+                                }
+                            ],
+                            "policy": {
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "typeProperties": {
+                                "variableName": "lst",
+                                "value": {
+                                    "value": "@item().MRData.RaceTable.Races",
+                                    "type": "Expression"
+                                }
+                            }
+                        }
+                    ]
+                }
+            },
+            {
+                "name": "act_set_variable_start_time",
+                "type": "SetVariable",
+                "dependsOn": [],
+                "policy": {
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "variableName": "start_time",
+                    "value": {
+                        "value": "@utcNow('yyyy-MM-dd HH:mm:ss')",
+                        "type": "Expression"
+                    }
+                }
+            },
+            {
+                "name": "act_lookup_insert_formulaone_metadata",
+                "type": "Lookup",
+                "dependsOn": [
+                    {
+                        "activity": "act_set_variable_start_time",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "source": {
+                        "type": "AzurePostgreSqlSource",
+                        "query": {
+                            "value": "INSERT INTO public.formulaone_metadata_table\n(job_id, job_name, task_name, status, start_time)\nVALUES('@{formatDateTime(variables('start_time'),'yyyyMMddHHmmss')}', 'pl_api_ingest1', 'session_api', 'In-progress', '@{variables('start_time')}');\n\nINSERT INTO public.formulaone_metadata_table\n(job_id, job_name, task_name, status, start_time)\nVALUES('@{formatDateTime(variables('start_time'),'yyyyMMddHHmmss')}', 'pl_api_ingest1', 'race_api', 'In-progress', '@{variables('start_time')}');\n\nINSERT INTO public.formulaone_metadata_table\n(job_id, job_name, task_name, status, start_time)\nVALUES('@{formatDateTime(variables('start_time'),'yyyyMMddHHmmss')}', 'pl_api_ingest1', 'result_api', 'In-progress', '@{variables('start_time')}');\n\nselect job_id from public.formulaone_metadata_table;",
+                            "type": "Expression"
+                        },
+                        "partitionOption": "None"
+                    },
+                    "dataset": {
+                        "referenceName": "ds_AzurePostgreSqlTable1",
+                        "type": "DatasetReference"
+                    },
+                    "firstRowOnly": false
+                }
+            },
+            {
+                "name": "act_lookup_update_formulaone_metadata_copy1",
+                "type": "Lookup",
+                "dependsOn": [
+                    {
+                        "activity": "act_copy_from_api_to_adls",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "source": {
+                        "type": "AzurePostgreSqlSource",
+                        "query": {
+                            "value": "UPDATE public.formulaone_metadata_table\nSET status = 'success',\nend_time = '@{utcNow('yyyy-MM-dd HH:mm:ss')}'\nWHERE job_id = '@{formatDateTime(variables('start_time'),'yyyyMMddHHmmss')}' and task_name = 'session_api';\n\nselect job_id from public.formulaone_metadata_table;",
+                            "type": "Expression"
+                        },
+                        "partitionOption": "None"
+                    },
+                    "dataset": {
+                        "referenceName": "ds_AzurePostgreSqlTable1",
+                        "type": "DatasetReference"
+                    },
+                    "firstRowOnly": false
+                }
+            },
+            {
+                "name": "act_lookup_update_formulaone_metadata_copy1_copy1",
+                "type": "Lookup",
+                "dependsOn": [
+                    {
+                        "activity": "act_foreach_season",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "source": {
+                        "type": "AzurePostgreSqlSource",
+                        "query": {
+                            "value": "UPDATE public.formulaone_metadata_table\nSET status = 'success',\nend_time = '@{utcNow('yyyy-MM-dd HH:mm:ss')}'\nWHERE job_id = '@{formatDateTime(variables('start_time'),'yyyyMMddHHmmss')}' and task_name = 'race_api';\n\nselect job_id from public.formulaone_metadata_table;",
+                            "type": "Expression"
+                        },
+                        "partitionOption": "None"
+                    },
+                    "dataset": {
+                        "referenceName": "ds_AzurePostgreSqlTable1",
+                        "type": "DatasetReference"
+                    },
+                    "firstRowOnly": false
+                }
+            },
+            {
+                "name": "act_lookup_update_formulaone_metadata_copy1_copy1_copy1",
+                "type": "Lookup",
+                "dependsOn": [
+                    {
+                        "activity": "act_foreach_race_seeeion_file",
+                        "dependencyConditions": [
+                            "Succeeded"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "source": {
+                        "type": "AzurePostgreSqlSource",
+                        "query": {
+                            "value": "UPDATE public.formulaone_metadata_table\nSET status = 'success',\nend_time = '@{utcNow('yyyy-MM-dd HH:mm:ss')}'\nWHERE job_id = '@{formatDateTime(variables('start_time'),'yyyyMMddHHmmss')}' and task_name = 'result_api';\n\nselect job_id from public.formulaone_metadata_table;",
+                            "type": "Expression"
+                        },
+                        "partitionOption": "None"
+                    },
+                    "dataset": {
+                        "referenceName": "ds_AzurePostgreSqlTable1",
+                        "type": "DatasetReference"
+                    },
+                    "firstRowOnly": false
+                }
+            },
+            {
+                "name": "act_lookup_update_fail_result",
+                "type": "Lookup",
+                "dependsOn": [
+                    {
+                        "activity": "act_foreach_race_seeeion_file",
+                        "dependencyConditions": [
+                            "Failed"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "source": {
+                        "type": "AzurePostgreSqlSource",
+                        "query": {
+                            "value": "UPDATE public.formulaone_metadata_table\nSET status = 'failed',\nend_time = '@{utcNow('yyyy-MM-dd HH:mm:ss')}'\nWHERE job_id = '@{formatDateTime(variables('start_time'),'yyyyMMddHHmmss')}' and task_name = 'result_api';\n\nselect job_id from public.formulaone_metadata_table;",
+                            "type": "Expression"
+                        },
+                        "partitionOption": "None"
+                    },
+                    "dataset": {
+                        "referenceName": "ds_AzurePostgreSqlTable1",
+                        "type": "DatasetReference"
+                    },
+                    "firstRowOnly": false
+                }
+            },
+            {
+                "name": "act_lookup_update_fail_result_copy1",
+                "type": "Lookup",
+                "dependsOn": [
+                    {
+                        "activity": "act_copy_from_api_to_adls",
+                        "dependencyConditions": [
+                            "Failed"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "source": {
+                        "type": "AzurePostgreSqlSource",
+                        "query": {
+                            "value": "UPDATE public.formulaone_metadata_table\nSET status = 'failed',\nend_time = '@{utcNow('yyyy-MM-dd HH:mm:ss')}'\nWHERE job_id = '@{formatDateTime(variables('start_time'),'yyyyMMddHHmmss')}' and task_name = 'session_api';\n\nUPDATE public.formulaone_metadata_table\nSET status = 'failed',\nend_time = '@{utcNow('yyyy-MM-dd HH:mm:ss')}'\nWHERE job_id = '@{formatDateTime(variables('start_time'),'yyyyMMddHHmmss')}' and task_name = 'race_api';\n\nUPDATE public.formulaone_metadata_table\nSET status = 'failed',\nend_time = '@{utcNow('yyyy-MM-dd HH:mm:ss')}'\nWHERE job_id = '@{formatDateTime(variables('start_time'),'yyyyMMddHHmmss')}' and task_name = 'result_api';\n\nselect job_id from public.formulaone_metadata_table;",
+                            "type": "Expression"
+                        },
+                        "partitionOption": "None"
+                    },
+                    "dataset": {
+                        "referenceName": "ds_AzurePostgreSqlTable1",
+                        "type": "DatasetReference"
+                    },
+                    "firstRowOnly": false
+                }
+            },
+            {
+                "name": "act_lookup_update_fail_result_copy1_copy1",
+                "type": "Lookup",
+                "dependsOn": [
+                    {
+                        "activity": "act_foreach_season",
+                        "dependencyConditions": [
+                            "Failed"
+                        ]
+                    }
+                ],
+                "policy": {
+                    "timeout": "0.12:00:00",
+                    "retry": 0,
+                    "retryIntervalInSeconds": 30,
+                    "secureOutput": false,
+                    "secureInput": false
+                },
+                "userProperties": [],
+                "typeProperties": {
+                    "source": {
+                        "type": "AzurePostgreSqlSource",
+                        "query": {
+                            "value": "UPDATE public.formulaone_metadata_table\nSET status = 'failed',\nend_time = '@{utcNow('yyyy-MM-dd HH:mm:ss')}'\nWHERE job_id = '@{formatDateTime(variables('start_time'),'yyyyMMddHHmmss')}' and task_name = 'race_api';\n\nUPDATE public.formulaone_metadata_table\nSET status = 'failed',\nend_time = '@{utcNow('yyyy-MM-dd HH:mm:ss')}'\nWHERE job_id = '@{formatDateTime(variables('start_time'),'yyyyMMddHHmmss')}' and task_name = 'result_api';\n\nselect job_id from public.formulaone_metadata_table;",
+                            "type": "Expression"
+                        },
+                        "partitionOption": "None"
+                    },
+                    "dataset": {
+                        "referenceName": "ds_AzurePostgreSqlTable1",
+                        "type": "DatasetReference"
+                    },
+                    "firstRowOnly": false
+                }
+            }
+        ],
+        "variables": {
+            "season_id": {
+                "type": "String"
+            },
+            "round_id": {
+                "type": "String"
+            },
+            "start_time": {
+                "type": "String"
+            },
+            "lst": {
+                "type": "Array"
+            },
+            "season": {
+                "type": "String"
+            },
+            "round": {
+                "type": "String"
+            }
+        },
+        "folder": {
+            "name": "formulaone_project_api_ingestion"
+        },
+        "annotations": [],
+        "lastPublishTime": "2024-04-23T17:38:38Z"
+    },
+    "type": "Microsoft.DataFactory/factories/pipelines"
+}

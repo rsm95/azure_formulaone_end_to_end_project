@@ -1,0 +1,144 @@
+{
+    "name": "pl_ingest_race_result",
+    "properties": {
+        "activities": [
+            {
+                "name": "act_foreach_race_data",
+                "type": "ForEach",
+                "dependsOn": [],
+                "userProperties": [],
+                "typeProperties": {
+                    "items": {
+                        "value": "@pipeline().parameters.race_lst",
+                        "type": "Expression"
+                    },
+                    "isSequential": true,
+                    "activities": [
+                        {
+                            "name": "act_setvar_season_id",
+                            "type": "SetVariable",
+                            "dependsOn": [],
+                            "policy": {
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "typeProperties": {
+                                "variableName": "season_id",
+                                "value": {
+                                    "value": "@item().season\r\n",
+                                    "type": "Expression"
+                                }
+                            }
+                        },
+                        {
+                            "name": "act_setvar_round_id",
+                            "type": "SetVariable",
+                            "dependsOn": [],
+                            "policy": {
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "typeProperties": {
+                                "variableName": "round_id",
+                                "value": {
+                                    "value": "@item().round\r\n",
+                                    "type": "Expression"
+                                }
+                            }
+                        },
+                        {
+                            "name": "act_copy_data_session_api_to_adls",
+                            "type": "Copy",
+                            "dependsOn": [
+                                {
+                                    "activity": "act_setvar_season_id",
+                                    "dependencyConditions": [
+                                        "Succeeded"
+                                    ]
+                                },
+                                {
+                                    "activity": "act_setvar_round_id",
+                                    "dependencyConditions": [
+                                        "Succeeded"
+                                    ]
+                                }
+                            ],
+                            "policy": {
+                                "timeout": "0.12:00:00",
+                                "retry": 0,
+                                "retryIntervalInSeconds": 30,
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "typeProperties": {
+                                "source": {
+                                    "type": "JsonSource",
+                                    "storeSettings": {
+                                        "type": "HttpReadSettings",
+                                        "requestMethod": "GET"
+                                    },
+                                    "formatSettings": {
+                                        "type": "JsonReadSettings"
+                                    }
+                                },
+                                "sink": {
+                                    "type": "JsonSink",
+                                    "storeSettings": {
+                                        "type": "AzureBlobFSWriteSettings"
+                                    },
+                                    "formatSettings": {
+                                        "type": "JsonWriteSettings"
+                                    }
+                                },
+                                "enableStaging": false
+                            },
+                            "inputs": [
+                                {
+                                    "referenceName": "ds_api_http1",
+                                    "type": "DatasetReference",
+                                    "parameters": {
+                                        "relative_url": {
+                                            "value": "@concat(variables('season_id'),'/',variables('round_id'),'/results.json?limit=100')",
+                                            "type": "Expression"
+                                        }
+                                    }
+                                }
+                            ],
+                            "outputs": [
+                                {
+                                    "referenceName": "ds_adls_formulaone_json1",
+                                    "type": "DatasetReference",
+                                    "parameters": {
+                                        "directory_path": "@concat('bronze/results/',string(utcNow('yyyyMMdd')))"
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+        ],
+        "parameters": {
+            "race_lst": {
+                "type": "array"
+            }
+        },
+        "variables": {
+            "season_id": {
+                "type": "String"
+            },
+            "round_id": {
+                "type": "String"
+            }
+        },
+        "folder": {
+            "name": "session2"
+        },
+        "annotations": [],
+        "lastPublishTime": "2024-04-21T17:26:49Z"
+    },
+    "type": "Microsoft.DataFactory/factories/pipelines"
+}
